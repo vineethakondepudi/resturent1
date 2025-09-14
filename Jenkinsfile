@@ -1,61 +1,68 @@
-// Declarative Jenkins pipeline
-}
+pipeline {
+    agent any
 
+    environment {
+        DOCKERHUB_CREDENTIALS = 'dockerhub-creds' // Jenkins credentials ID
+        IMAGE_NAME = 'vineethakondepudi/restaurant' // your Docker Hub repo
+        IMAGE_TAG = "${BUILD_NUMBER}" // tag with Jenkins build number
+    }
 
-stages {
-stage('Checkout') {
-steps {
-checkout scm
-}
-}
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+    }
 
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
-stage('Install & Build') {
-steps {
-echo 'Installing node modules and building the React app'
-// Use a node container on Jenkins agents that support Docker, or install Node on agent
-sh 'npm ci'
-sh 'npm run build'
-}
-}
+        stage('Install Dependencies & Build React App') {
+            steps {
+                echo "Installing dependencies and building React app"
+                sh 'npm ci'
+                sh 'npm run build'
+            }
+        }
 
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
+                }
+            }
+        }
 
-stage('Build Docker Image') {
-steps {
-script {
-sh "docker build -t ${IMAGE_NAME}:${IMAGE_TAG} ."
-}
-}
-}
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
+                    sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+                    sh "docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${IMAGE_NAME}:latest"
+                    sh "docker push ${IMAGE_NAME}:latest"
+                }
+            }
+        }
 
+        stage('Cleanup') {
+            steps {
+                sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
+                sh "docker rmi ${IMAGE_NAME}:latest || true"
+            }
+        }
+    }
 
-stage('Push to Docker Hub') {
-steps {
-withCredentials([usernamePassword(credentialsId: env.DOCKERHUB_CREDENTIALS, usernameVariable: 'DOCKERHUB_USER', passwordVariable: 'DOCKERHUB_PASS')]) {
-sh 'echo $DOCKERHUB_PASS | docker login -u $DOCKERHUB_USER --password-stdin'
-sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
-}
-}
-}
-
-
-stage('Cleanup local images') {
-steps {
-sh "docker rmi ${IMAGE_NAME}:${IMAGE_TAG} || true"
-}
-}
-}
-
-
-post {
-success {
-echo "Build and push succeeded: ${IMAGE_NAME}:${IMAGE_TAG}"
-}
-failure {
-echo 'Pipeline failed.'
-}
-always {
-cleanWs()
-}
-}
+    post {
+        success {
+            echo "✅ Build & push succeeded: ${IMAGE_NAME}:${IMAGE_TAG}"
+        }
+        failure {
+            echo "❌ Pipeline failed"
+        }
+        always {
+            cleanWs()
+        }
+    }
 }
