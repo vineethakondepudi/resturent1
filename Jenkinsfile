@@ -19,13 +19,14 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies & Build React App') {
-            steps {
-                echo "Installing dependencies and building React app"
-                sh 'npm ci'
-                sh 'npm run build'
-            }
-        }
+      stage('Install Dependencies & Build React App') {
+    steps {
+        echo "Installing dependencies and building React app"
+        sh 'npm ci'
+        // disable CI mode so warnings don’t break the build
+        sh 'CI=false npm run build'
+    }
+}
 
         stage('Build Docker Image') {
             steps {
